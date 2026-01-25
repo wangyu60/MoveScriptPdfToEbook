@@ -79,8 +79,13 @@ def extract_text_with_coordinates(pdf_path, page_num, output_path, filter_spaces
     print(f"Output saved to: {output_path}")
 
 if __name__ == "__main__":
-    pdf_file = "true-grit-2010.pdf"
+    import sys
+    if len(sys.argv) < 3:
+        print("Usage: python extract_text_coordinates.py <pdf_file> <page_num>")
+        sys.exit(1)
+    
+    pdf_file = sys.argv[1]
+    page_num = int(sys.argv[2])
     output_file = "temp_extracted_coordinates.json"
     
-    # Extract from page 2 (0-indexed, so page 2 = index 1)
-    extract_text_with_coordinates(pdf_file, page_num=1, output_path=output_file)
+    extract_text_with_coordinates(pdf_file, page_num, output_file)

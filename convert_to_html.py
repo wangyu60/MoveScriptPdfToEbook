@@ -16,7 +16,7 @@ def convert_to_html(classified_file, output_html_file):
     html_lines.append('<html>')
     html_lines.append('<head>')
     html_lines.append('  <meta charset="UTF-8">')
-    html_lines.append('  <title>True Grit - Movie Script</title>')
+    html_lines.append('  <title>Screenplay</title>')
     html_lines.append('  <link href="styles.css" rel="stylesheet"/>')
     html_lines.append('</head>')
     html_lines.append('<body>')

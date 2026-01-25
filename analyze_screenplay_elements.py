@@ -263,7 +263,12 @@ def analyze_screenplay_elements(coordinates_file, output_file):
     return output_data
 
 if __name__ == "__main__":
-    input_file = "temp_extracted_coordinates.json"
-    output_file = "temp_classified_elements.json"
+    import sys
+    if len(sys.argv) >= 3:
+        input_file = sys.argv[1]
+        output_file = sys.argv[2]
+    else:
+        input_file = "temp_extracted_coordinates.json"
+        output_file = "temp_classified_elements.json"
     
     analyze_screenplay_elements(input_file, output_file)
