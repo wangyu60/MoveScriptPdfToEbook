@@ -1,0 +1,93 @@
+body {
+    font-family: "Times New Roman", serif;
+    line-height: 1.2;
+    margin: 0;
+    padding: 0;
+}
+
+.page-number {
+    display: block;
+    text-align: right;
+    font-size: 0.8em;
+    margin-top: 1em;
+    margin-bottom: 1em;
+}
+
+.script-title {
+    text-align: center;
+    font-size: 2em;
+    margin-top: 2em;
+    margin-bottom: 0.5em;
+}
+
+.script-credit-label {
+    text-align: center;
+    font-size: 1.2em;
+    margin-top: 1em;
+    margin-bottom: 0.2em;
+}
+
+.script-credit-name {
+    text-align: center;
+    font-size: 1.1em;
+    margin-top: 0.2em;
+    margin-bottom: 1em;
+    font-weight: normal; /* Ensure credit names are not bold */
+}
+
+.front-matter {
+    text-align: left; /* Changed to left-align as per screenshot */
+    margin-left: 10%; /* Adjusted for left alignment */
+    margin-right: 10%;
+    margin-top: 0.5em;
+    margin-bottom: 0.5em;
+}
+
+.front-matter-date {
+    text-align: center;
+    margin-left: 15%;
+    margin-right: 15%;
+    margin-top: 0.5em;
+    margin-bottom: 0.5em;
+}
+
+h3.scene-heading {
+    text-align: left;
+    text-transform: uppercase;
+    margin-top: 1.5em;
+    margin-bottom: 0.5em;
+    margin-left: 10%;
+    margin-right: 10%;
+}
+
+p.action {
+    text-align: left;
+    margin-top: 0.5em;
+    margin-bottom: 0.5em;
+    margin-left: 10%;
+    margin-right: 10%;
+}
+
+h4.character-name {
+    text-align: center;
+    text-transform: uppercase;
+    margin-top: 1em;
+    margin-bottom: 0.2em;
+    margin-left: 30%; /* Adjusted for better centering based on visual */
+    margin-right: 30%; /* Adjusted for better centering based on visual */
+    font-weight: normal; /* Ensure character names are not bold */
+}
+
+p.dialogue {
+    display: block; 
+    margin-left: 15%; /* Adjusted indentation based on screenshot */
+    margin-right: 15%; /* Adjusted indentation based on screenshot */
+    margin-top: 0.2em;
+    margin-bottom: 0.2em;
+    text-align: left; /* Explicitly left-align dialogue */
+}
+
+/* Styling for parenthetical/italic text within dialogue */
+em, i {
+    font-style: italic;
+}

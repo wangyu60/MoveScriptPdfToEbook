@@ -1,0 +1,86 @@
+import fitz
+import json
+
+def extract_text_with_coordinates(pdf_path, page_num, output_path, filter_spaces=True):
+    """
+    Extract text with positional data from a specific page of a PDF.
+    
+    PyMuPDF Structure:
+    - Block: A paragraph or distinct text region (can contain multiple lines)
+    - Line: A single line within a block
+    - Span: A text segment within a line (for different formatting/fonts)
+    
+    Args:
+        pdf_path: Path to the PDF file
+        page_num: Page number to extract (0-indexed)
+        output_path: Path to save the output file
+        filter_spaces: If True, ignore spans containing only whitespace
+    """
+    doc = fitz.open(pdf_path)
+    
+    # Check if page exists
+    if page_num >= len(doc):
+        print(f"Error: Page {page_num} does not exist. PDF has {len(doc)} pages.")
+        doc.close()
+        return
+    
+    page = doc[page_num]
+    blocks = page.get_text("dict")["blocks"]
+    
+    extracted_data = []
+    space_spans_skipped = 0
+    
+    for block_idx, block in enumerate(blocks):
+        if "lines" in block:
+            for line_idx, line in enumerate(block["lines"]):
+                for span_idx, span in enumerate(line["spans"]):
+                    text = span["text"]
+                    
+                    # Filter out space-only spans if requested
+                    if filter_spaces and not text.strip():
+                        space_spans_skipped += 1
+                        continue
+                    
+                    bbox = span["bbox"]  # (x0, y0, x1, y1)
+                    font_size = span["size"]
+                    font_name = span.get("font", "unknown")
+                    
+                    # Store the extracted data
+                    span_data = {
+                        "block": block_idx,
+                        "line": line_idx,
+                        "span": span_idx,
+                        "text": text,
+                        "bbox": {
+                            "x0": bbox[0],
+                            "y0": bbox[1],
+                            "x1": bbox[2],
+                            "y1": bbox[3]
+                        },
+                        "font_size": font_size,
+                        "font_name": font_name
+                    }
+                    extracted_data.append(span_data)
+    
+    doc.close()
+    
+    # Save to output file (JSON format for easy review)
+    with open(output_path, 'w', encoding='utf-8') as f:
+        json.dump({
+            "page_number": page_num,
+            "total_spans": len(extracted_data),
+            "spans": extracted_data,
+            "space_spans_skipped": space_spans_skipped if filter_spaces else 0
+        }, f, indent=2, ensure_ascii=False)
+    
+    print(f"Extracted {len(extracted_data)} text spans from page {page_num}")
+    if filter_spaces and space_spans_skipped > 0:
+        print(f"Skipped {space_spans_skipped} space-only spans")
+    print(f"Output saved to: {output_path}")
+
+if __name__ == "__main__":
+    pdf_file = "true-grit-2010.pdf"
+    output_file = "temp_extracted_coordinates.json"
+    
+    # Extract from page 2 (0-indexed, so page 2 = index 1)
+    extract_text_with_coordinates(pdf_file, page_num=1, output_path=output_file)
