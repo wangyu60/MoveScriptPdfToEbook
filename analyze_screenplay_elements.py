@@ -174,78 +174,43 @@ def analyze_screenplay_elements(coordinates_file, output_file):
                 classified_elements.append(current_dialogue_group)
                 current_dialogue_group = None
             
-            # Character names are typically short (1-4 words) and centered
-            # They can be uppercase, title case, or mixed case
-            text_clean = full_text.strip()
-            word_count = len(text_clean.split())
-            # If it's short and centered, it's likely a character name
-            # Visual items are typically longer descriptions
-            if word_count <= 4 and len(text_clean) < 50:
-                element_type = "character_name"
-                # Group vertically close consecutive character name lines
-                if current_character_name_group is None:
-                    # Start new character name group
+            # Check font_name to determine line type within character name group
+            # Get font_name from the first span (assuming consistent font within a line)
+            font_name = spans[0].get("font_name", "")
+            
+            if "italic" in font_name.lower():
+                # Italic font indicates parenthetical
+                element_data["line_type"] = "parenthetical"
+            else:
+                # Normal font indicates character name
+                element_data["line_type"] = "character_name"
+            
+            # Group both character names and parentheticals together as character_name_group
+            element_type = "character_name"
+            # Group vertically close consecutive character name lines
+            if current_character_name_group is None:
+                # Start new character name group
+                current_character_name_group = {
+                    "type": "character_name",
+                    "lines": [element_data],
+                    "x0": primary_x0
+                }
+            else:
+                # Check if this line is vertically close to the last line in the group
+                last_line = current_character_name_group["lines"][-1]
+                vertical_gap = y0 - last_line["y1"]
+                if vertical_gap < VERTICAL_CLOSE_THRESHOLD:
+                    # Vertically close - continue the character name group
+                    current_character_name_group["lines"].append(element_data)
+                else:
+                    # Not vertically close - save previous group and start new one
+                    classified_elements.append(current_character_name_group)
                     current_character_name_group = {
                         "type": "character_name",
                         "lines": [element_data],
                         "x0": primary_x0
                     }
-                else:
-                    # Check if this line is vertically close to the last line in the group
-                    last_line = current_character_name_group["lines"][-1]
-                    vertical_gap = y0 - last_line["y1"]
-                    if vertical_gap < VERTICAL_CLOSE_THRESHOLD:
-                        # Vertically close - continue the character name group
-                        current_character_name_group["lines"].append(element_data)
-                    else:
-                        # Not vertically close - save previous group and start new one
-                        classified_elements.append(current_character_name_group)
-                        current_character_name_group = {
-                            "type": "character_name",
-                            "lines": [element_data],
-                            "x0": primary_x0
-                        }
-                continue  # Skip adding to classified_elements for now
-            else:
-                element_type = "visual_item"
-                # Save any current character name group first
-                if current_character_name_group is not None:
-                    classified_elements.append(current_character_name_group)
-                    current_character_name_group = None
-        
-        else:
-            # Unknown - default to action
-            element_type = "action"
-            print(f"Warning: Unclassified line at x0={primary_x0:.1f}: '{full_text[:50]}'")
-            # Save any current character name group first
-            if current_character_name_group is not None:
-                classified_elements.append(current_character_name_group)
-                current_character_name_group = None
-            # Treat as action and group if vertically close
-            if current_action_group is None:
-                current_action_group = {
-                    "type": "action",
-                    "lines": [element_data],
-                    "x0": primary_x0
-                }
-            else:
-                last_line = current_action_group["lines"][-1]
-                vertical_gap = y0 - last_line["y1"]
-                if vertical_gap < VERTICAL_CLOSE_THRESHOLD:
-                    current_action_group["lines"].append(element_data)
-                else:
-                    classified_elements.append(current_action_group)
-                    current_action_group = {
-                        "type": "action",
-                        "lines": [element_data],
-                        "x0": primary_x0
-                    }
-            continue
-        
-        # Add the classified element (for non-grouped types like visual_item, scene_heading)
-        # Note: character_name is now grouped, so it won't reach here
-        element_data["type"] = element_type
-        classified_elements.append(element_data)
+            continue  # Skip adding to classified_elements for now
     
     # Don't forget the last groups
     if current_dialogue_group is not None:

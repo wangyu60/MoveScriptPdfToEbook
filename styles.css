@@ -78,6 +78,27 @@ h4.character-name {
     font-weight: normal; /* Ensure character names are not bold */
 }
 
+.character-name-group {
+    text-align: center;
+    margin-top: 1em;
+    margin-bottom: 0.2em;
+    margin-left: 30%;
+    margin-right: 30%;
+}
+
+.character-name-group .character-name {
+    text-transform: uppercase;
+    font-weight: normal;
+    margin: 0;
+    line-height: 1.1;
+}
+
+.character-name-group .parenthetical {
+    font-style: italic;
+    margin: 0;
+    line-height: 1.1;
+}
+
 p.dialogue {
     display: block; 
     margin-left: 15%; /* Adjusted indentation based on screenshot */

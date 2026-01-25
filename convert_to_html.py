@@ -44,18 +44,24 @@ def convert_to_html(classified_file, output_html_file):
                 html_lines.append(f'  <p class="action">{formatted_text}</p>')
         
         elif elem_type == "character_name":
-            # Character name: <h4 class="character-name">
-            # May be grouped (multiple lines) or single
+            # Character name group: may contain both character names and parentheticals
+            # Render as separate lines with minimal spacing
             if "lines" in elem:
-                # Grouped character name lines - combine them
-                formatted_text = format_text_with_spans(elem["lines"])
-            elif "spans" in elem:
-                # Single character name with spans
-                formatted_text = format_text_with_spans([elem])
+                # Grouped character name/parenthetical lines
+                html_lines.append('  <div class="character-name-group">')
+                for line in elem["lines"]:
+                    line_type = line.get("line_type", "character_name")
+                    formatted_text = format_text_with_spans([line])
+                    
+                    if line_type == "parenthetical":
+                        html_lines.append(f'    <div class="parenthetical">{formatted_text}</div>')
+                    else:
+                        html_lines.append(f'    <div class="character-name">{formatted_text}</div>')
+                html_lines.append('  </div>')
             else:
-                # Single character name without spans
-                formatted_text = escape(elem["text"].strip())
-            html_lines.append(f'  <h4 class="character-name">{formatted_text}</h4>')
+                # Single character name line
+                formatted_text = format_text_with_spans([elem])
+                html_lines.append(f'  <h4 class="character-name">{formatted_text}</h4>')
         
         elif elem_type == "dialogue":
             # Dialogue: <p class="dialogue"> (may have multiple lines)
@@ -98,8 +104,8 @@ def convert_to_html(classified_file, output_html_file):
 
 def format_text_with_spans(lines):
     """
-    Format text preserving italics from span font information.
-    Checks if font name contains 'Italic' to determine italic formatting.
+    Format text preserving italics and bold from span font information.
+    Checks font name for 'Italic' and 'Bold' to determine formatting.
     """
     formatted_parts = []
     
@@ -111,13 +117,19 @@ def format_text_with_spans(lines):
                 if not text:
                     continue
                 
-                # Check if italic (font name contains 'Italic')
+                # Check font formatting
                 font_name = span.get("font_name", "")
-                is_italic = "Italic" in font_name or "italic" in font_name.lower()
+                is_italic = "italic" in font_name.lower()
+                is_bold = "bold" in font_name.lower()
                 
                 escaped_text = escape(text)
                 
-                if is_italic:
+                # Apply formatting based on font
+                if is_bold and is_italic:
+                    formatted_parts.append(f"<b><i>{escaped_text}</i></b>")
+                elif is_bold:
+                    formatted_parts.append(f"<b>{escaped_text}</b>")
+                elif is_italic:
                     formatted_parts.append(f"<i>{escaped_text}</i>")
                 else:
                     formatted_parts.append(escaped_text)
