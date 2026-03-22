@@ -3,7 +3,7 @@ import sys
 from ebooklib import epub
 from bs4 import BeautifulSoup
 
-def convert_to_epub(html_file, title=None, cover_image=None):
+def convert_to_epub(html_file, title=None, cover_image=None, author="Unknown"):
     """
     Convert HTML file to EPUB format using the same base name.
     
@@ -11,6 +11,7 @@ def convert_to_epub(html_file, title=None, cover_image=None):
         html_file: Path to HTML file
         title: Optional book title. If None, extracted from HTML <title> tag.
         cover_image: Optional path to a cover image (JPEG/PNG).
+        author: Author name to embed in EPUB metadata.
     """
     # Generate output EPUB filename
     base_name = os.path.splitext(html_file)[0]
@@ -24,7 +25,7 @@ def convert_to_epub(html_file, title=None, cover_image=None):
         title_tag = soup.find('title')
         title = title_tag.get_text() if title_tag else 'Screenplay'
     
-    create_epub(html_file, "styles.css", epub_file, title, cover_image=cover_image)
+    create_epub(html_file, "styles.css", epub_file, title, author=author, cover_image=cover_image)
     return epub_file
 
 def create_epub(html_path, css_path, output_epub_path, title="Screenplay", author="Unknown", cover_image=None):

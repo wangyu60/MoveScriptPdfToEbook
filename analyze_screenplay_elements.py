@@ -25,45 +25,57 @@ def analyze_screenplay_elements(coordinates_file, output_file):
     # Transition keywords: a single line ending with any of these (case-insensitive) is a transition_right
     TRANSITION_SUFFIXES = ("CUT TO:", "DISSOLVE TO:", "FADE TO:")
     
-    # Group spans by block and line to reconstruct full lines
+    # Scene number pattern: "1", "2.2", "A2.2", "B2.2" etc.
+    # In Final Draft PDFs, these share the same block/line as the scene heading,
+    # so they must be filtered span-by-span BEFORE grouping to avoid contaminating
+    # the concatenated text and the primary_x0 used for classification.
+    SCENE_NUMBER_RE = re.compile(r'^[A-Z]?\d+(\.\d+)*$')
+
+    # Group spans by block and line to reconstruct full lines,
+    # dropping scene-number spans individually so they never pollute the line text.
     lines_by_block = {}
     for span in data["spans"]:
+        span_text = span["text"].strip()
+        if SCENE_NUMBER_RE.match(span_text):
+            print(f"Skipping scene number span: '{span_text}' at x0={span['bbox']['x0']:.1f}")
+            continue
+
         block_num = span["block"]
         line_num = span["line"]
         key = (block_num, line_num)
-        
+
         if key not in lines_by_block:
             lines_by_block[key] = {
                 "spans": [],
                 "y0": span["bbox"]["y0"],
                 "y1": span["bbox"]["y1"]
             }
-        
+
         lines_by_block[key]["spans"].append(span)
-    
+
     # Sort lines by position (y0 coordinate)
     sorted_lines = sorted(lines_by_block.items(), key=lambda x: x[1]["y0"])
-    
+
     # Classify and process lines
     classified_elements = []
     current_dialogue_group = None
     current_action_group = None
     current_character_name_group = None
     VERTICAL_CLOSE_THRESHOLD = 1.0  # Lines with y0 - prev_y1 < this are considered vertically close
-    
+
     for (block_num, line_num), line_data in sorted_lines:
-        # Combine all spans in this line
+        # Combine all spans in this line (scene-number spans already removed above)
         spans = sorted(line_data["spans"], key=lambda s: s["bbox"]["x0"])
         full_text = "".join(span["text"] for span in spans).strip()
-        
+
         if not full_text:
             continue
-        
-        # Get the primary x0 (from first span, or average if needed)
+
+        # Get the primary x0 (from first span — now guaranteed to be real content)
         primary_x0 = spans[0]["bbox"]["x0"]
         y0 = line_data["y0"]
         y1 = line_data["y1"]  # Get y1 for vertical proximity checking
-        
+
         # Check if it's a page number (numeric or "N." format, far right)
         is_numeric = bool(re.match(r'^\d+\.?$', full_text.strip()))
         if is_numeric and primary_x0 >= X0_PAGE_NUMBER_MIN:

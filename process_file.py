@@ -35,6 +35,49 @@ def process_page(pdf_file, page_num, output_base_name):
     
     print(f"\n=== Complete! Output saved to {output_base_name}.html and {output_base_name}.epub ===")
 
+def extract_author_from_cover(pdf_file):
+    """Extract author name from the cover page (page 0).
+
+    Looks for a line whose text contains the word 'by' (e.g. 'Written by',
+    'Screenplay by', 'Adaptation by') and returns the very next non-empty
+    line as the author.  Falls back to 'Unknown' if none is found.
+    """
+    import fitz
+    doc = fitz.open(pdf_file)
+    page = doc[0]
+
+    # Collect non-empty lines in reading order (top-to-bottom)
+    lines = []
+    for block in page.get_text("blocks"):
+        block_text = block[4]  # raw text for the whole block
+        y0 = block[1]
+        for raw_line in block_text.split("\n"):
+            text = raw_line.strip()
+            if text:
+                lines.append((y0, text))
+
+    # Sort by vertical position
+    lines.sort(key=lambda x: x[0])
+    texts = [t for _, t in lines]
+
+    import re
+    by_pattern = re.compile(r'\bby\b', re.IGNORECASE)
+
+    for i, text in enumerate(texts):
+        if by_pattern.search(text):
+            # Return the next non-empty line
+            for candidate in texts[i + 1:]:
+                if candidate.strip():
+                    author = candidate.strip()
+                    print(f"Detected author: '{author}'")
+                    doc.close()
+                    return author
+
+    doc.close()
+    print("Warning: could not detect author from cover page, defaulting to 'Unknown'")
+    return "Unknown"
+
+
 def process_file(pdf_file, output_html_file):
     """Process entire PDF file through the full pipeline."""
     import fitz  # PyMuPDF
@@ -49,12 +92,15 @@ def process_file(pdf_file, output_html_file):
     doc = fitz.open(pdf_file)
     total_pages = len(doc)
     
+    # --- Extract author from cover page before closing the document ---
+    author = extract_author_from_cover(pdf_file)
+
     # --- Render page 0 as cover image ---
     cover_path = "Intermediates/cover.jpg"
     cover_page = doc[0]
     cover_page.get_pixmap(dpi=250).save(cover_path)
     print(f"Cover image saved to: {cover_path}")
-    
+
     doc.close()
     
     print(f"\n=== Processing entire PDF: {total_pages} pages (screenplay starts page 2) ===")
@@ -101,7 +147,7 @@ def process_file(pdf_file, output_html_file):
     
     # Convert to EPUB
     import generate_epub
-    generate_epub.convert_to_epub(output_html_file, title=title, cover_image=cover_path)
+    generate_epub.convert_to_epub(output_html_file, title=title, cover_image=cover_path, author=author)
     
     print(f"\n=== Complete! Full PDF saved to {output_html_file} and {os.path.splitext(output_html_file)[0]}.epub ===")
 

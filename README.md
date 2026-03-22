@@ -1,8 +1,6 @@
 # PDF to Screenplay Converter
 
-A Python-based tool that converts PDF screenplay files into properly formatted HTML and EPUB formats, preserving screenplay structure and formatting.
-
-> **Coming back?** See [TODO.md](TODO.md) for your next steps and reminders.
+A Python-based tool that converts PDF screenplay files (including Final Draft exports) into properly formatted HTML and EPUB e-books, preserving screenplay structure and formatting.
 
 ## Technical Design
 
@@ -10,10 +8,10 @@ A Python-based tool that converts PDF screenplay files into properly formatted H
 
 The project follows a multi-stage pipeline architecture:
 
-1. **Text Extraction** - Extract text with coordinate information from PDF
-2. **Element Classification** - Analyze coordinates to identify screenplay elements
-3. **HTML Generation** - Convert classified elements to formatted HTML
-4. **EPUB Creation** - Package HTML into EPUB format
+1. **Text Extraction** — Extract text with coordinate information from every page of the PDF
+2. **Element Classification** — Analyse coordinates to identify screenplay elements
+3. **HTML Generation** — Convert classified elements to formatted HTML
+4. **EPUB Creation** — Package HTML into EPUB with metadata, cover image, and embedded CSS
 
 ### Core Components
 
@@ -21,39 +19,47 @@ The project follows a multi-stage pipeline architecture:
 - Uses PyMuPDF to extract text with precise coordinate information
 - Preserves font information (name, size, style)
 - Groups text spans by blocks and lines
+- Filters out whitespace-only spans
 
 #### 2. Element Analysis (`analyze_screenplay_elements.py`)
+- Filters scene-number spans (e.g. `1`, `20`, `A8`, `2.2`, `A2.2`) **at the span level** before grouping, so they never contaminate the concatenated line text or `x0` classification
 - Classifies text based on x-coordinate positioning:
-  - `x0 ≈ 93`: Scene headings and action descriptions
-  - `x0 ≈ 165`: Dialogue text
+  - `x0 ≈ 100`: Scene headings (uppercase, ≤ 5 words) and action descriptions
+  - `x0 ≈ 170`: Dialogue text
   - `x0 ≥ 200`: Character names and parentheticals
-- Uses font information to distinguish:
-  - Normal font → Character names
-  - Italic font → Parentheticals
-  - Bold font → Emphasized text
-- Groups consecutive lines with minimal vertical spacing
+  - Far-right (`x0 ≥ 450`): Page numbers — skipped
+- Uses font information to distinguish character names (normal) from parentheticals (italic)
+- Detects screenplay transitions (`CUT TO:`, `DISSOLVE TO:`, `FADE TO:`) and classifies them as `transition_right`
+- Groups consecutive lines with minimal vertical spacing into single elements
 
 #### 3. HTML Conversion (`convert_to_html.py`)
 - Generates semantic HTML with proper CSS classes
-- Preserves font formatting (bold, italic)
+- Preserves font formatting (bold, italic) from span data
 - Groups character names and parentheticals with minimal line spacing
-- Uses `styles.css` for screenplay-specific formatting
+- Links `styles.css` for screenplay-specific formatting
 
 #### 4. EPUB Generation (`generate_epub.py`)
 - Creates valid EPUB files using ebooklib
-- Links CSS for proper formatting preservation
-- Extracts title from HTML metadata
+- Embeds CSS directly into the EPUB package
+- Supports cover image, title, and author metadata
+
+#### 5. Main Orchestrator (`process_file.py`)
+- Renders page 0 as a cover image (250 DPI JPEG)
+- Auto-detects author name from the cover page by finding the line after "Written by" / "Screenplay by" / "Adaptation by" etc.
+- Derives title from the PDF filename
+- Processes all pages from page 1 onwards (page 0 is the cover)
+- Collects all classified elements and converts them to a single HTML + EPUB output
 
 ### File Structure
 
 ```
-├── process_file.py          # Main pipeline orchestrator
-├── extract_text_coordinates.py
-├── analyze_screenplay_elements.py
-├── convert_to_html.py
-├── generate_epub.py
-├── styles.css              # Screenplay formatting styles
-├── Intermediates/          # Temporary processing files
+├── process_file.py                # Main pipeline orchestrator
+├── extract_text_coordinates.py    # PDF → coordinate JSON
+├── analyze_screenplay_elements.py # Coordinate JSON → classified JSON
+├── convert_to_html.py             # Classified JSON → HTML
+├── generate_epub.py               # HTML → EPUB
+├── styles.css                     # Screenplay formatting styles
+├── Intermediates/                 # Per-page intermediate files
 └── README.md
 ```
 
@@ -72,10 +78,10 @@ python process_file.py screenplay.pdf
 ```
 
 Outputs:
-- `screenplay.html` - Formatted HTML version
-- `screenplay.epub` - EPUB e-book format
+- `screenplay.html` — Formatted HTML version
+- `screenplay.epub` — EPUB e-book (with cover image, title, and author)
 
-### Process Single Page
+### Process Single Page (for debugging)
 
 ```bash
 python process_file.py screenplay.pdf 5
@@ -87,50 +93,50 @@ Outputs:
 
 ### Individual Components
 
-Each component can be run independently:
-
 ```bash
-# Extract coordinates (specify PDF and page number to test)
+# Step 1 — Extract coordinates from a specific page (0-indexed)
 python extract_text_coordinates.py <pdf_file> <page_num>
+# Output: temp_extracted_coordinates.json
 
-# Analyze coordinates and classify screenplay elements
+# Step 2 — Classify elements from the coordinate JSON
 python analyze_screenplay_elements.py
-# Or: python analyze_coordinates.py
+# Output: temp_classified_elements.json
+
+# Step 3 — Convert to HTML
+python convert_to_html.py
+# Output: temp_screenplay.html
 ```
-
-**Usage notes:**
-
-1. **`extract_text_coordinates.py`** — Extracts text with coordinates from the PDF script file. Specify the page number (0-based) to test a single page. Output: `temp_extracted_coordinates.json`.
-
-2. **`analyze_coordinates.py`** / **`analyze_screenplay_elements.py`** — Analyze the coordinate JSON and classify screenplay elements (scene headings, action, dialogue, character names, parentheticals).
 
 ## Screenplay Element Classification
 
 The tool automatically identifies and formats:
 
-- **Scene Headings**: Uppercase location/time indicators
-- **Action**: Narrative descriptions and stage directions
-- **Character Names**: Speaker identification (centered, uppercase)
-- **Dialogue**: Character speech (indented)
-- **Parentheticals**: Stage directions within dialogue (italic, centered)
+| Element | CSS Class | Description |
+|---|---|---|
+| Scene Heading | `scene-heading` | Uppercase location/time indicators |
+| Action | `action` | Narrative descriptions and stage directions |
+| Character Name | `character-name-group` | Speaker identification (centered, uppercase) |
+| Parenthetical | `parenthetical` | Stage directions within dialogue (italic) |
+| Dialogue | `dialogue` | Character speech (indented) |
+| Transition | `transition-right` | CUT TO:, DISSOLVE TO:, FADE TO: (right-aligned) |
 
 ## Output Formats
 
-### HTML Features
+### HTML
 - Semantic markup with CSS classes
 - Preserved font formatting (bold/italic)
 - Proper indentation and spacing
-- Responsive design
+- Linked `styles.css` — open in any browser and press F5 to preview changes instantly
 
-### EPUB Features
+### EPUB
 - Valid EPUB 3.0 format
 - Embedded CSS styling
-- Proper metadata
-- Compatible with e-readers
+- Cover image from page 0 of the PDF (250 DPI)
+- Title from PDF filename; author auto-detected from cover page text
 
 ## Configuration
 
-Edit `styles.css` to customize:
+Edit `styles.css` to customise:
 - Font families and sizes
 - Margins and indentation
 - Line spacing
@@ -140,4 +146,4 @@ Edit `styles.css` to customize:
 
 - Intermediate JSON files stored in `Intermediates/` folder
 - Temporary files automatically replaced on re-run
-- Git ignores output files (*.html, *.pdf, *.epub, temp_*)
+- Git ignores output files (`*.html`, `*.pdf`, `*.epub`, `temp_*`)
