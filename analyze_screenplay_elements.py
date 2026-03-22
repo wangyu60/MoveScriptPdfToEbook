@@ -29,7 +29,7 @@ def analyze_screenplay_elements(coordinates_file, output_file):
     # In Final Draft PDFs, these share the same block/line as the scene heading,
     # so they must be filtered span-by-span BEFORE grouping to avoid contaminating
     # the concatenated text and the primary_x0 used for classification.
-    SCENE_NUMBER_RE = re.compile(r'^[A-Z]?\d+(\.\d+)*$')
+    SCENE_NUMBER_RE = re.compile(r'^[A-Z]?\d+[A-Z]?(\.[A-Z]?\d+[A-Z]?)*$')
 
     # Group spans by block and line to reconstruct full lines,
     # dropping scene-number spans individually so they never pollute the line text.
