@@ -42,16 +42,27 @@ def process_file(pdf_file, output_html_file):
     # Ensure Intermediates folder exists
     os.makedirs("Intermediates", exist_ok=True)
     
-    # Get total page count
+    # Derive title from PDF filename
+    title = os.path.splitext(os.path.basename(pdf_file))[0]
+    
+    # Open document
     doc = fitz.open(pdf_file)
     total_pages = len(doc)
+    
+    # --- Render page 0 as cover image ---
+    cover_path = "Intermediates/cover.jpg"
+    cover_page = doc[0]
+    cover_page.get_pixmap(dpi=250).save(cover_path)
+    print(f"Cover image saved to: {cover_path}")
+    
     doc.close()
     
-    print(f"\n=== Processing entire PDF: {total_pages} pages ===")
+    print(f"\n=== Processing entire PDF: {total_pages} pages (screenplay starts page 2) ===")
     
     all_elements = []
     
-    for page_num in range(total_pages):
+    # Start from page 1 (index), i.e. the second page — page 0 is the cover
+    for page_num in range(1, total_pages):
         print(f"\n--- Processing page {page_num + 1}/{total_pages} ---")
         
         # Step 1: Extract coordinates
@@ -90,7 +101,7 @@ def process_file(pdf_file, output_html_file):
     
     # Convert to EPUB
     import generate_epub
-    generate_epub.convert_to_epub(output_html_file)
+    generate_epub.convert_to_epub(output_html_file, title=title, cover_image=cover_path)
     
     print(f"\n=== Complete! Full PDF saved to {output_html_file} and {os.path.splitext(output_html_file)[0]}.epub ===")
 

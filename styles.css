@@ -59,16 +59,16 @@ h3.scene-heading {
     text-transform: uppercase;
     margin-top: 1.5em;
     margin-bottom: 0.5em;
-    margin-left: 10%;
-    margin-right: 10%;
+    margin-left: 0;
+    margin-right: 0;
 }
 
 p.action {
     text-align: left;
     margin-top: 0.5em;
     margin-bottom: 0.5em;
-    margin-left: 10%;
-    margin-right: 10%;
+    margin-left: 0;
+    margin-right: 0;
 }
 
 h4.character-name {
@@ -128,6 +128,6 @@ p.transition-right {
     text-transform: uppercase;
     margin-top: 1em;
     margin-bottom: 1em;
-    margin-left: 10%;
-    margin-right: 10%;
+    margin-left: 0;
+    margin-right: 0;
 }

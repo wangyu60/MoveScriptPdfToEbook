@@ -3,3 +3,4 @@
 *.epub
 __pycache__/
 temp_*
+Intermediates/
