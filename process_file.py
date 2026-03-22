@@ -95,10 +95,38 @@ def process_file(pdf_file, output_html_file):
     # --- Extract author from cover page before closing the document ---
     author = extract_author_from_cover(pdf_file)
 
-    # --- Render page 0 as cover image ---
+    # --- Render page 0 as cover image, cropped to text bounds ---
     cover_path = "Intermediates/cover.jpg"
     cover_page = doc[0]
-    cover_page.get_pixmap(dpi=250).save(cover_path)
+
+    # Find the union bounding box of all text blocks on the cover page,
+    # ignoring any blocks in the bottom 30% of the page (footer/date lines).
+    page_rect = cover_page.rect
+    upper_limit = page_rect.y1 * 0.70
+    text_blocks = [
+        b for b in cover_page.get_text("blocks")
+        if b[4].strip() and b[1] < upper_limit
+    ]
+    if text_blocks:
+        x0 = min(b[0] for b in text_blocks)
+        y0 = min(b[1] for b in text_blocks)
+        x1 = max(b[2] for b in text_blocks)
+        y1 = max(b[3] for b in text_blocks)
+
+        # Add 10% padding around the text area
+        pw = (x1 - x0) * 0.10
+        ph = (y1 - y0) * 0.10
+        clip = fitz.Rect(
+            max(0,            x0 - pw),
+            max(0,            y0 - ph),
+            min(page_rect.x1, x1 + pw),
+            min(page_rect.y1, y1 + ph),
+        )
+        cover_page.get_pixmap(dpi=300, clip=clip).save(cover_path)
+    else:
+        # Fallback: render the full page if no text found
+        cover_page.get_pixmap(dpi=250).save(cover_path)
+
     print(f"Cover image saved to: {cover_path}")
 
     doc.close()

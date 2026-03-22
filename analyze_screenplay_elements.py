@@ -14,12 +14,12 @@ def analyze_screenplay_elements(coordinates_file, output_file):
     with open(coordinates_file, 'r', encoding='utf-8') as f:
         data = json.load(f)
     
-    # Thresholds for classification (with tolerance for floating point)
-    X0_ACTION = 100.0
-    X0_DIALOGUE = 170.0
-    X0_CHARACTER_MIN = 200.0  # Character names start after dialogue
-    X0_PAGE_NUMBER_MIN = 450.0  # Page numbers are typically far right
+    # These will be dynamically calculated based on the page's minimum x0
+    X0_ACTION = None
+    X0_DIALOGUE = None
+    X0_CHARACTER_MIN = None
     
+    X0_PAGE_NUMBER_MIN = 450.0  # Page numbers are typically far right
     TOLERANCE = 10.0  # Tolerance for coordinate matching
     
     # Transition keywords: a single line ending with any of these (case-insensitive) is a transition_right
@@ -55,6 +55,36 @@ def analyze_screenplay_elements(coordinates_file, output_file):
 
     # Sort lines by position (y0 coordinate)
     sorted_lines = sorted(lines_by_block.items(), key=lambda x: x[1]["y0"])
+
+    # --- Dynamic Threshold Calculation ---
+    # Find the minimum x0 among all valid lines (excluding page numbers)
+    # This becomes our baseline X0_ACTION for the page.
+    valid_x0s = []
+    for _, line_data in sorted_lines:
+        spans = sorted(line_data["spans"], key=lambda s: s["bbox"]["x0"])
+        full_text = "".join(span["text"] for span in spans).strip()
+        if not full_text:
+            continue
+        primary_x0 = spans[0]["bbox"]["x0"]
+
+        # Ignore likely page numbers (numeric and far right)
+        is_numeric = bool(re.match(r'^\d+$', full_text))
+        if is_numeric and primary_x0 >= X0_PAGE_NUMBER_MIN:
+            continue
+
+        valid_x0s.append(primary_x0)
+
+    if valid_x0s:
+        # The leftmost text on the page (excluding page numbers) is action/scene heading
+        X0_ACTION = min(valid_x0s)
+    else:
+        # Fallback if page is completely empty
+        X0_ACTION = 100.0
+
+    # Dialogue is indented from action (typically +70 points)
+    X0_DIALOGUE = X0_ACTION + 70.0
+    # Character names are indented further (typically +100 points)
+    X0_CHARACTER_MIN = X0_ACTION + 100.0
 
     # Classify and process lines
     classified_elements = []
