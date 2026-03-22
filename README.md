@@ -2,6 +2,8 @@
 
 A Python-based tool that converts PDF screenplay files into properly formatted HTML and EPUB formats, preserving screenplay structure and formatting.
 
+> **Coming back?** See [TODO.md](TODO.md) for your next steps and reminders.
+
 ## Technical Design
 
 ### Architecture Overview
@@ -88,18 +90,19 @@ Outputs:
 Each component can be run independently:
 
 ```bash
-# Extract coordinates
-python extract_text_coordinates.py
+# Extract coordinates (specify PDF and page number to test)
+python extract_text_coordinates.py <pdf_file> <page_num>
 
-# Classify elements
+# Analyze coordinates and classify screenplay elements
 python analyze_screenplay_elements.py
-
-# Convert to HTML
-python convert_to_html.py
-
-# Generate EPUB
-python generate_epub.py output.html
+# Or: python analyze_coordinates.py
 ```
+
+**Usage notes:**
+
+1. **`extract_text_coordinates.py`** — Extracts text with coordinates from the PDF script file. Specify the page number (0-based) to test a single page. Output: `temp_extracted_coordinates.json`.
+
+2. **`analyze_coordinates.py`** / **`analyze_screenplay_elements.py`** — Analyze the coordinate JSON and classify screenplay elements (scene headings, action, dialogue, character names, parentheticals).
 
 ## Screenplay Element Classification
 

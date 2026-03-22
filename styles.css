@@ -32,12 +32,15 @@ body {
     font-size: 1.1em;
     margin-top: 0.2em;
     margin-bottom: 1em;
-    font-weight: normal; /* Ensure credit names are not bold */
+    font-weight: normal;
+    /* Ensure credit names are not bold */
 }
 
 .front-matter {
-    text-align: left; /* Changed to left-align as per screenshot */
-    margin-left: 10%; /* Adjusted for left alignment */
+    text-align: left;
+    /* Changed to left-align as per screenshot */
+    margin-left: 10%;
+    /* Adjusted for left alignment */
     margin-right: 10%;
     margin-top: 0.5em;
     margin-bottom: 0.5em;
@@ -73,9 +76,12 @@ h4.character-name {
     text-transform: uppercase;
     margin-top: 1em;
     margin-bottom: 0.2em;
-    margin-left: 30%; /* Adjusted for better centering based on visual */
-    margin-right: 30%; /* Adjusted for better centering based on visual */
-    font-weight: normal; /* Ensure character names are not bold */
+    margin-left: 30%;
+    /* Adjusted for better centering based on visual */
+    margin-right: 30%;
+    /* Adjusted for better centering based on visual */
+    font-weight: normal;
+    /* Ensure character names are not bold */
 }
 
 .character-name-group {
@@ -100,15 +106,28 @@ h4.character-name {
 }
 
 p.dialogue {
-    display: block; 
-    margin-left: 15%; /* Adjusted indentation based on screenshot */
-    margin-right: 15%; /* Adjusted indentation based on screenshot */
+    display: block;
+    margin-left: 25%;
+    /* Adjusted indentation based on screenshot */
+    margin-right: 25%;
+    /* Adjusted indentation based on screenshot */
     margin-top: 0.2em;
     margin-bottom: 0.2em;
-    text-align: left; /* Explicitly left-align dialogue */
+    text-align: left;
+    /* Explicitly left-align dialogue */
 }
 
 /* Styling for parenthetical/italic text within dialogue */
-em, i {
+em,
+i {
     font-style: italic;
+}
+
+p.transition-right {
+    text-align: right;
+    text-transform: uppercase;
+    margin-top: 1em;
+    margin-bottom: 1em;
+    margin-left: 10%;
+    margin-right: 10%;
 }

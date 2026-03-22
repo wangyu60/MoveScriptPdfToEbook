@@ -1,7 +1,7 @@
 import fitz
 import json
 
-def extract_text_with_coordinates(pdf_path, page_num, output_path, filter_spaces=True):
+def extract_text_with_coordinates(pdf_path, page_num, output_path, filter_spaces=True, y0_tolerance=1.0):
     """
     Extract text with positional data from a specific page of a PDF.
     
@@ -15,6 +15,7 @@ def extract_text_with_coordinates(pdf_path, page_num, output_path, filter_spaces
         page_num: Page number to extract (0-indexed)
         output_path: Path to save the output file
         filter_spaces: If True, ignore spans containing only whitespace
+        y0_tolerance: Tolerance for grouping spans with similar y0 (horizontal lines)
     """
     doc = fitz.open(pdf_path)
     
@@ -32,6 +33,10 @@ def extract_text_with_coordinates(pdf_path, page_num, output_path, filter_spaces
     
     for block_idx, block in enumerate(blocks):
         if "lines" in block:
+            # Group lines by y0 coordinate to detect spaced-out characters
+            lines_by_y0 = {}
+            line_order = []  # Track order of first appearance for each y0
+            
             for line_idx, line in enumerate(block["lines"]):
                 for span_idx, span in enumerate(line["spans"]):
                     text = span["text"]
@@ -42,6 +47,20 @@ def extract_text_with_coordinates(pdf_path, page_num, output_path, filter_spaces
                         continue
                     
                     bbox = span["bbox"]  # (x0, y0, x1, y1)
+                    y0 = bbox[1]
+                    
+                    # Find if this y0 matches an existing group (within tolerance)
+                    matched_y0 = None
+                    for existing_y0 in lines_by_y0:
+                        if abs(y0 - existing_y0) < y0_tolerance:
+                            matched_y0 = existing_y0
+                            break
+                    
+                    if matched_y0 is None:
+                        matched_y0 = y0
+                        line_order.append(matched_y0)
+                        lines_by_y0[matched_y0] = []
+                    
                     font_size = span["size"]
                     font_name = span.get("font", "unknown")
                     
@@ -60,7 +79,15 @@ def extract_text_with_coordinates(pdf_path, page_num, output_path, filter_spaces
                         "font_size": font_size,
                         "font_name": font_name
                     }
+                    lines_by_y0[matched_y0].append(span_data)
+            
+            # Now flatten the grouped lines, assigning new logical line numbers
+            logical_line_idx = 0
+            for y0 in line_order:
+                for span_data in lines_by_y0[y0]:
+                    span_data["line"] = logical_line_idx
                     extracted_data.append(span_data)
+                logical_line_idx += 1
     
     doc.close()
     

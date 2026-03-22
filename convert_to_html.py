@@ -82,6 +82,11 @@ def convert_to_html(classified_file, output_html_file):
                 formatted_text = format_text_with_spans([elem])
             html_lines.append(f'  <p class="action">{formatted_text}</p>')
         
+        elif elem_type == "transition_right":
+            # Transition (CUT TO:, DISSOLVE TO:, FADE TO:): right-aligned, all-caps
+            text = escape(elem["text"].strip())
+            html_lines.append(f'  <p class="transition-right">{text}</p>')
+        
         else:
             # Unknown type - default to action
             print(f"Warning: Unknown element type '{elem_type}', treating as action")

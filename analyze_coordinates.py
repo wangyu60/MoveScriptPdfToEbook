@@ -15,15 +15,13 @@ def analyze_screenplay_elements(coordinates_file, output_file):
         data = json.load(f)
     
     # Thresholds for classification (with tolerance for floating point)
-    X0_ACTION = 100.0
-    X0_DIALOGUE = 170.0
+    X0_ACTION_MAX = 130.0  # Action lines (scene descriptions, action) - lower x0
+    X0_DIALOGUE = 165.0
+    X0_DIALOGUE_MAX = 195.0  # Dialogue can be indented up to this point
     X0_CHARACTER_MIN = 200.0  # Character names start after dialogue
-    X0_PAGE_NUMBER_MIN = 450.0  # Page numbers are typically far right
+    X0_PAGE_NUMBER_MIN = 500.0  # Page numbers are typically far right
     
-    TOLERANCE = 10.0  # Tolerance for coordinate matching
-    
-    # Transition keywords: a single line ending with any of these (case-insensitive) is a transition_right
-    TRANSITION_SUFFIXES = ("CUT TO:", "DISSOLVE TO:", "FADE TO:")
+    TOLERANCE = 5.0  # Tolerance for coordinate matching
     
     # Group spans by block and line to reconstruct full lines
     lines_by_block = {}
@@ -64,8 +62,8 @@ def analyze_screenplay_elements(coordinates_file, output_file):
         y0 = line_data["y0"]
         y1 = line_data["y1"]  # Get y1 for vertical proximity checking
         
-        # Check if it's a page number (numeric or "N." format, far right)
-        is_numeric = bool(re.match(r'^\d+\.?$', full_text.strip()))
+        # Check if it's a page number (numeric, far right)
+        is_numeric = bool(re.match(r'^\d+$', full_text.strip()))
         if is_numeric and primary_x0 >= X0_PAGE_NUMBER_MIN:
             print(f"Skipping page number: '{full_text}' at x0={primary_x0:.1f}")
             continue
@@ -82,29 +80,10 @@ def analyze_screenplay_elements(coordinates_file, output_file):
             "spans": spans
         }
         
-        # --- Transition check (takes priority over x0 classification) ---
-        upper_text = full_text.upper().strip()
-        if any(upper_text.endswith(suffix) for suffix in TRANSITION_SUFFIXES):
-            # Flush any open groups first
-            if current_action_group is not None:
-                classified_elements.append(current_action_group)
-                current_action_group = None
-            if current_dialogue_group is not None:
-                classified_elements.append(current_dialogue_group)
-                current_dialogue_group = None
-            if current_character_name_group is not None:
-                classified_elements.append(current_character_name_group)
-                current_character_name_group = None
-            element_data["type"] = "transition_right"
-            element_data["text"] = upper_text  # normalise to all-caps
-            classified_elements.append(element_data)
-            print(f"Transition right: '{upper_text}' at x0={primary_x0:.1f}")
-            continue
-        
-        if abs(primary_x0 - X0_ACTION) < TOLERANCE:
-            # Scene heading or action/description
+        if primary_x0 <= X0_ACTION_MAX:
+            # Scene heading or action/description (lower indentation)
             # Check if it's uppercase (likely scene heading) or mixed case (action)
-            if full_text.isupper() and len(full_text.split()) <= 5:
+            if full_text.isupper() and len(full_text.split()) <= 8:
                 element_type = "scene_heading"
                 # Scene headings are standalone, so save any current groups first
                 if current_action_group is not None:
@@ -143,8 +122,9 @@ def analyze_screenplay_elements(coordinates_file, output_file):
                         }
                 continue  # Skip adding to classified_elements for now
         
-        elif abs(primary_x0 - X0_DIALOGUE) < TOLERANCE:
+        elif X0_DIALOGUE - TOLERANCE <= primary_x0 <= X0_DIALOGUE_MAX:
             # Dialogue - group consecutive lines with same x0 AND vertically close
+            # Dialogue can be indented, so check if it falls within the dialogue range
             # Save any current action or character name groups first
             if current_action_group is not None:
                 classified_elements.append(current_action_group)
@@ -186,7 +166,7 @@ def analyze_screenplay_elements(coordinates_file, output_file):
                 }
             continue  # Skip adding to classified_elements for now
         
-        elif primary_x0 >= X0_CHARACTER_MIN and primary_x0 < X0_PAGE_NUMBER_MIN:
+        elif primary_x0 >= X0_CHARACTER_MIN:
             # Character name or visual item (centered)
             # Save any current action or dialogue groups first
             if current_action_group is not None:
@@ -196,73 +176,78 @@ def analyze_screenplay_elements(coordinates_file, output_file):
                 classified_elements.append(current_dialogue_group)
                 current_dialogue_group = None
             
-            # Check font_name to determine line type within character name group
-            # Get font_name from the first span (assuming consistent font within a line)
-            font_name = spans[0].get("font_name", "")
-            
-            if "italic" in font_name.lower():
-                # Italic font indicates parenthetical
-                element_data["line_type"] = "parenthetical"
-            else:
-                # Normal font indicates character name
-                element_data["line_type"] = "character_name"
-            
-            # Group both character names and parentheticals together as character_name_group
-            element_type = "character_name"
-            # Group vertically close consecutive character name lines
-            if current_character_name_group is None:
-                # Start new character name group
-                current_character_name_group = {
-                    "type": "character_name",
-                    "lines": [element_data],
-                    "x0": primary_x0
-                }
-            else:
-                # Check if this line is vertically close to the last line in the group
-                last_line = current_character_name_group["lines"][-1]
-                vertical_gap = y0 - last_line["y1"]
-                if vertical_gap < VERTICAL_CLOSE_THRESHOLD:
-                    # Vertically close - continue the character name group
-                    current_character_name_group["lines"].append(element_data)
-                else:
-                    # Not vertically close - save previous group and start new one
-                    classified_elements.append(current_character_name_group)
+            # Character names are typically short (1-4 words) and centered
+            # They can be uppercase, title case, or mixed case
+            text_clean = full_text.strip()
+            word_count = len(text_clean.split())
+            # If it's short and centered, it's likely a character name
+            # Visual items are typically longer descriptions
+            if word_count <= 4 and len(text_clean) < 50:
+                element_type = "character_name"
+                # Group vertically close consecutive character name lines
+                if current_character_name_group is None:
+                    # Start new character name group
                     current_character_name_group = {
                         "type": "character_name",
                         "lines": [element_data],
                         "x0": primary_x0
                     }
-            continue  # Skip adding to classified_elements for now
+                else:
+                    # Check if this line is vertically close to the last line in the group
+                    last_line = current_character_name_group["lines"][-1]
+                    vertical_gap = y0 - last_line["y1"]
+                    if vertical_gap < VERTICAL_CLOSE_THRESHOLD:
+                        # Vertically close - continue the character name group
+                        current_character_name_group["lines"].append(element_data)
+                    else:
+                        # Not vertically close - save previous group and start new one
+                        classified_elements.append(current_character_name_group)
+                        current_character_name_group = {
+                            "type": "character_name",
+                            "lines": [element_data],
+                            "x0": primary_x0
+                        }
+                continue  # Skip adding to classified_elements for now
+            else:
+                element_type = "visual_item"
+                # Save any current character name group first
+                if current_character_name_group is not None:
+                    classified_elements.append(current_character_name_group)
+                    current_character_name_group = None
         
         else:
-            # Fallback: x0 didn't match any defined range — treat it as dialogue by default
-            print(f"Warning: block={block_num}, line={line_num} has x0={primary_x0:.1f} outside defined ranges; defaulting to dialogue.")
-            if current_action_group is not None:
-                classified_elements.append(current_action_group)
-                current_action_group = None
+            # Unknown - default to action
+            element_type = "action"
+            print(f"Warning: Unclassified line at x0={primary_x0:.1f}: '{full_text[:50]}'")
+            # Save any current character name group first
             if current_character_name_group is not None:
                 classified_elements.append(current_character_name_group)
                 current_character_name_group = None
-            
-            if current_dialogue_group is None:
-                current_dialogue_group = {
-                    "type": "dialogue",
+            # Treat as action and group if vertically close
+            if current_action_group is None:
+                current_action_group = {
+                    "type": "action",
                     "lines": [element_data],
                     "x0": primary_x0
                 }
             else:
-                last_line = current_dialogue_group["lines"][-1]
+                last_line = current_action_group["lines"][-1]
                 vertical_gap = y0 - last_line["y1"]
                 if vertical_gap < VERTICAL_CLOSE_THRESHOLD:
-                    current_dialogue_group["lines"].append(element_data)
+                    current_action_group["lines"].append(element_data)
                 else:
-                    classified_elements.append(current_dialogue_group)
-                    current_dialogue_group = {
-                        "type": "dialogue",
+                    classified_elements.append(current_action_group)
+                    current_action_group = {
+                        "type": "action",
                         "lines": [element_data],
                         "x0": primary_x0
                     }
-            continue  # Skip adding to classified_elements for now
+            continue
+        
+        # Add the classified element (for non-grouped types like visual_item, scene_heading)
+        # Note: character_name is now grouped, so it won't reach here
+        element_data["type"] = element_type
+        classified_elements.append(element_data)
     
     # Don't forget the last groups
     if current_dialogue_group is not None:
@@ -315,12 +300,7 @@ def analyze_screenplay_elements(coordinates_file, output_file):
     return output_data
 
 if __name__ == "__main__":
-    import sys
-    if len(sys.argv) >= 3:
-        input_file = sys.argv[1]
-        output_file = sys.argv[2]
-    else:
-        input_file = "temp_extracted_coordinates.json"
-        output_file = "temp_classified_elements.json"
+    input_file = "temp_extracted_coordinates.json"
+    output_file = "temp_classified_elements.json"
     
     analyze_screenplay_elements(input_file, output_file)
