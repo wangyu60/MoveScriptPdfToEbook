@@ -4,59 +4,112 @@ import subprocess
 import sys
 import os
 import json
+import fitz
+from PIL import Image
 
-def process_page(pdf_file, page_num, output_base_name):
+BUILD_DIR = "build"
+
+def ensure_build_path(path):
+    if os.path.isabs(path):
+        return os.path.normpath(path)
+    normalized = os.path.normpath(path)
+    build_normalized = os.path.normpath(BUILD_DIR)
+    if normalized == build_normalized or normalized.startswith(build_normalized + os.sep):
+        return normalized
+    return os.path.normpath(os.path.join(BUILD_DIR, normalized))
+
+
+def ensure_output_dir(output_path):
+    dir_path = os.path.dirname(output_path)
+    if dir_path:
+        os.makedirs(dir_path, exist_ok=True)
+
+
+def is_scanned_pdf(pdf_file):
+    """
+    Auto-detect if a PDF is a scanned document (OCR'd) by checking
+    the variance of font sizes across the page. OCR text layers 
+    have wildly varying font sizes (dozens of unique exact floats) 
+    per page, whereas native PDFs have very consistent font sizes.
+    """
+    import fitz
+    try:
+        doc = fitz.open(pdf_file)
+        page_to_check = 1 if len(doc) > 1 else 0
+        page = doc[page_to_check]
+        
+        unique_sizes = set()
+        blocks = page.get_text("dict")["blocks"]
+        for b in blocks:
+            if "lines" in b:
+                for l in b["lines"]:
+                    for s in l["spans"]:
+                        text = s["text"].strip()
+                        if text:
+                            unique_sizes.add(round(s["size"], 2))
+                            
+        # If there are dozens of unique font sizes, it's OCR generated.
+        if len(unique_sizes) > 15:
+            doc.close()
+            return True
+            
+        doc.close()
+    except Exception as e:
+        print(f"Error during auto-detect: {e}")
+        
+    return False
+
+def process_page(pdf_file, page_num, output_base_name, use_ocr=False, crop_rect=None):
     """Process a single page through the full pipeline."""
     
-    # Ensure Intermediates folder exists
     os.makedirs("Intermediates", exist_ok=True)
     
-    # Step 1: Extract coordinates
     print(f"\n=== Step 1: Extracting coordinates from page {page_num + 1} ===")
-    import extract_text_coordinates
     coords_file = f"Intermediates/{output_base_name}_coordinates.json"
-    extract_text_coordinates.extract_text_with_coordinates(pdf_file, page_num, coords_file)
     
-    # Step 2: Analyze and classify
+    if use_ocr:
+        import extract_text_ocr
+        extract_text_ocr.extract_text_ocr(pdf_file, page_num, coords_file, clip_rect=crop_rect)
+    else:
+        import extract_text_coordinates
+        extract_text_coordinates.extract_text_with_coordinates(pdf_file, page_num, coords_file)
+
+    if not os.path.exists(coords_file):
+        print(f"Extraction failed for page {page_num + 1}; skipping downstream steps.")
+        return
+    
     print(f"\n=== Step 2: Analyzing and classifying elements ===")
     import analyze_screenplay_elements
     classified_file = f"Intermediates/{output_base_name}_classified.json"
     analyze_screenplay_elements.analyze_screenplay_elements(coords_file, classified_file)
     
-    # Step 3: Convert to HTML
     print(f"\n=== Step 3: Converting to HTML ===")
+    output_html_file = ensure_build_path(f"{output_base_name}.html")
+    ensure_output_dir(output_html_file)
     import convert_to_html
-    convert_to_html.convert_to_html(classified_file, f"{output_base_name}.html")
+    convert_to_html.convert_to_html(classified_file, output_html_file)
     
-    # Step 4: Convert to EPUB
-    print(f"\n=== Step 4: Converting to EPUB ===")
+    print(f"=== Step 4: Converting to EPUB ===")
     import generate_epub
-    generate_epub.convert_to_epub(f"{output_base_name}.html")
+    generate_epub.convert_to_epub(output_html_file)
     
-    print(f"\n=== Complete! Output saved to {output_base_name}.html and {output_base_name}.epub ===")
+    print(f"=== Complete! Output saved to {output_html_file} and {os.path.splitext(output_html_file)[0]}.epub ===")
 
 def extract_author_from_cover(pdf_file):
-    """Extract author name from the cover page (page 0).
-
-    Looks for a line whose text contains the word 'by' (e.g. 'Written by',
-    'Screenplay by', 'Adaptation by') and returns the very next non-empty
-    line as the author.  Falls back to 'Unknown' if none is found.
-    """
+    """Extract author name from the cover page (page 0)."""
     import fitz
     doc = fitz.open(pdf_file)
     page = doc[0]
 
-    # Collect non-empty lines in reading order (top-to-bottom)
     lines = []
     for block in page.get_text("blocks"):
-        block_text = block[4]  # raw text for the whole block
+        block_text = block[4]
         y0 = block[1]
         for raw_line in block_text.split("\n"):
             text = raw_line.strip()
             if text:
                 lines.append((y0, text))
 
-    # Sort by vertical position
     lines.sort(key=lambda x: x[0])
     texts = [t for _, t in lines]
 
@@ -65,7 +118,6 @@ def extract_author_from_cover(pdf_file):
 
     for i, text in enumerate(texts):
         if by_pattern.search(text):
-            # Return the next non-empty line
             for candidate in texts[i + 1:]:
                 if candidate.strip():
                     author = candidate.strip()
@@ -78,29 +130,25 @@ def extract_author_from_cover(pdf_file):
     return "Unknown"
 
 
-def process_file(pdf_file, output_html_file):
+def process_file(pdf_file, output_html_file, use_ocr=False, crop_rect=None):
     """Process entire PDF file through the full pipeline."""
-    import fitz  # PyMuPDF
+    import fitz  
     
-    # Ensure Intermediates folder exists
     os.makedirs("Intermediates", exist_ok=True)
+    os.makedirs(BUILD_DIR, exist_ok=True)
+    output_html_file = ensure_build_path(output_html_file)
+    ensure_output_dir(output_html_file)
     
-    # Derive title from PDF filename
     title = os.path.splitext(os.path.basename(pdf_file))[0]
     
-    # Open document
     doc = fitz.open(pdf_file)
     total_pages = len(doc)
     
-    # --- Extract author from cover page before closing the document ---
     author = extract_author_from_cover(pdf_file)
 
-    # --- Render page 0 as cover image, cropped to text bounds ---
     cover_path = "Intermediates/cover.jpg"
     cover_page = doc[0]
 
-    # Find the union bounding box of all text blocks on the cover page,
-    # ignoring any blocks in the bottom 30% of the page (footer/date lines).
     page_rect = cover_page.rect
     upper_limit = page_rect.y1 * 0.70
     text_blocks = [
@@ -113,7 +161,6 @@ def process_file(pdf_file, output_html_file):
         x1 = max(b[2] for b in text_blocks)
         y1 = max(b[3] for b in text_blocks)
 
-        # Add 10% padding around the text area
         pw = (x1 - x0) * 0.10
         ph = (y1 - y0) * 0.10
         clip = fitz.Rect(
@@ -124,76 +171,149 @@ def process_file(pdf_file, output_html_file):
         )
         cover_page.get_pixmap(dpi=300, clip=clip).save(cover_path)
     else:
-        # Fallback: render the full page if no text found
         cover_page.get_pixmap(dpi=250).save(cover_path)
 
     print(f"Cover image saved to: {cover_path}")
-
     doc.close()
+    doc = fitz.open(pdf_file)
     
-    print(f"\n=== Processing entire PDF: {total_pages} pages (screenplay starts page 2) ===")
+    extracted_extractor = "OCR" if use_ocr else "Standard"
+    print(f"\n=== Processing entire PDF: {total_pages} pages using {extracted_extractor} extractor===")
     
     all_elements = []
     
-    # Start from page 1 (index), i.e. the second page — page 0 is the cover
     for page_num in range(1, total_pages):
         print(f"\n--- Processing page {page_num + 1}/{total_pages} ---")
         
-        # Step 1: Extract coordinates
-        import extract_text_coordinates
-        coords_file = f"Intermediates/temp_page_{page_num}_coordinates.json"
-        extract_text_coordinates.extract_text_with_coordinates(pdf_file, page_num, coords_file)
-        
-        # Step 2: Analyze and classify
-        import analyze_screenplay_elements
-        classified_file = f"Intermediates/temp_page_{page_num}_classified.json"
-        analyze_screenplay_elements.analyze_screenplay_elements(coords_file, classified_file)
-        
-        # Load classified elements and add to collection
-        with open(classified_file, 'r', encoding='utf-8') as f:
-            page_data = json.load(f)
-            all_elements.extend(page_data["elements"])
+        if use_ocr:
+            coords_file = f"Intermediates/temp_page_{page_num}_coordinates.json"
+            import extract_text_ocr
+            import analyze_screenplay_elements
+            extract_text_ocr.extract_text_ocr(pdf_file, page_num, coords_file, clip_rect=crop_rect)
+
+            if not os.path.exists(coords_file):
+                print(f"Extraction failed for page {page_num + 1}; skipping this page.")
+                continue
+
+            classified_file = f"Intermediates/temp_page_{page_num}_classified.json"
+            analyze_screenplay_elements.analyze_screenplay_elements(coords_file, classified_file)
+
+            with open(classified_file, 'r', encoding='utf-8') as f:
+                page_data = json.load(f)
+                all_elements.extend(page_data["elements"])
+        else:
+            coords_file = f"Intermediates/temp_page_{page_num}_coordinates.json"
+            import extract_text_coordinates
+            import analyze_screenplay_elements
+            extract_text_coordinates.extract_text_with_coordinates(pdf_file, page_num, coords_file)
+
+            if not os.path.exists(coords_file):
+                print(f"Extraction failed for page {page_num + 1}; skipping this page.")
+                continue
+
+            classified_file = f"Intermediates/temp_page_{page_num}_classified.json"
+            analyze_screenplay_elements.analyze_screenplay_elements(coords_file, classified_file)
+
+            with open(classified_file, 'r', encoding='utf-8') as f:
+                page_data = json.load(f)
+                all_elements.extend(page_data["elements"])
     
-    # Step 3: Convert all elements to HTML
     print(f"\n=== Converting {len(all_elements)} elements to HTML ===")
     
-    # Create combined data structure
     combined_data = {
         "page_number": "all",
         "total_elements": len(all_elements),
         "elements": all_elements
     }
     
-    # Save combined classified data
     combined_file = "Intermediates/temp_all_classified.json"
     with open(combined_file, 'w', encoding='utf-8') as f:
         json.dump(combined_data, f, indent=2, ensure_ascii=False)
     
-    # Convert to HTML
     import convert_to_html
     convert_to_html.convert_to_html(combined_file, output_html_file)
     
-    # Convert to EPUB
     import generate_epub
     generate_epub.convert_to_epub(output_html_file, title=title, cover_image=cover_path, author=author)
     
+    doc.close()
     print(f"\n=== Complete! Full PDF saved to {output_html_file} and {os.path.splitext(output_html_file)[0]}.epub ===")
 
-if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python process_file.py <pdf_file> [page_num]")
-        sys.exit(1)
-    
-    pdf_file = sys.argv[1]
-    
-    if len(sys.argv) >= 3:
-        # Process single page
-        page_num = int(sys.argv[2])
-        output_base = f"temp_screenplay_pg{page_num}"
-        process_page(pdf_file, page_num, output_base)
-    else:
-        # Process entire file
-        base_name = os.path.splitext(os.path.basename(pdf_file))[0]
-        output_html = f"{base_name}.html"
-        process_file(pdf_file, output_html)
 
+
+
+
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="Process a screenplay PDF with optional OCR detection.")
+    parser.add_argument("pdf_file", help="Path to the PDF file")
+    parser.add_argument("page_num", type=int, nargs='?', help="Process a single page (0-indexed). If omitted, processes entire document.")
+    parser.add_argument("--ocr", choices=['auto', 'force', 'skip'], default='auto', help="OCR extraction mode (default: auto)")
+    parser.add_argument("--select-crop", action="store_true", help="Interactively select crop region for OCR (excludes page numbers, dates, etc.)")
+    parser.add_argument("--crop-json", help="Path to crop selection JSON file (skip interactive selection)")
+
+
+    args = parser.parse_args()
+
+    # Handle crop region selection
+    crop_rect = None
+    if args.select_crop or args.crop_json:
+        if not args.ocr or args.ocr == 'skip':
+            print("Warning: --select-crop/--crop-json requires OCR mode. Forcing OCR mode.")
+            use_ocr = True
+        
+        if args.crop_json:
+            # Load from JSON file
+            import select_crop_region
+            crop_rect = select_crop_region.load_crop_selection(args.crop_json)
+            if crop_rect:
+                print(f"Loaded crop region from {args.crop_json}")
+            else:
+                print(f"Warning: Could not load crop region from {args.crop_json}")
+        elif args.select_crop:
+            # Interactive selection
+            import select_crop_region
+            print("Opening interactive crop selector...")
+            print("Instructions:")
+            print("  - Click and drag to select the OCR region")
+            print("  - Press Enter to confirm")
+            print("  - Press R to reselect")
+            print("  - Press Q to cancel")
+            
+            # Use specified page number, or default to page 1 for full document processing
+            test_page = args.page_num if args.page_num is not None else 1
+            crop_rect = select_crop_region.select_crop_region(args.pdf_file, test_page)
+            
+            if crop_rect:
+                # Save selection for reuse
+                base_name = os.path.splitext(os.path.basename(args.pdf_file))[0]
+                crop_json_path = f"Intermediates/{base_name}_crop.json"
+                select_crop_region.save_crop_selection(crop_rect, args.pdf_file, test_page, crop_json_path)
+                print(f"Crop selection saved to {crop_json_path}")
+                print(f"Use --crop-json {crop_json_path} to reuse this selection")
+            else:
+                print("Crop selection cancelled. Proceeding without crop region.")
+
+    use_ocr = False
+    if args.ocr == 'force':
+        use_ocr = True
+        print("OCR Mode: FORCED")
+    elif args.ocr == 'skip':
+        use_ocr = False
+        print("OCR Mode: SKIPPED (Native Text Only)")
+    else:
+        print("OCR Mode: AUTO-DETECTING...")
+        use_ocr = is_scanned_pdf(args.pdf_file)
+        if use_ocr:
+            print(" -> Detected scanned/OCR PDF. Utilizing OCR Extractor.")
+        else:
+            print(" -> Detected native text PDF. Utilizing Standard Extractor.")
+
+    if args.page_num is not None:
+        output_base = f"temp_screenplay_pg{args.page_num}"
+        print(f"DEBUG: crop_rect passed to process_page: {crop_rect}")
+        process_page(args.pdf_file, args.page_num, output_base, use_ocr=use_ocr, crop_rect=crop_rect)
+    else:
+        base_name = os.path.splitext(os.path.basename(args.pdf_file))[0]
+        output_html = f"{base_name}.html"
+        process_file(args.pdf_file, output_html, use_ocr=use_ocr, crop_rect=crop_rect)

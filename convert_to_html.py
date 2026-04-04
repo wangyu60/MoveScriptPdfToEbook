@@ -1,5 +1,18 @@
 import json
+import os
 from html import escape
+
+BUILD_DIR = "build"
+
+def resolve_build_path(path):
+    if os.path.isabs(path):
+        return os.path.normpath(path)
+    normalized = os.path.normpath(path)
+    build_normalized = os.path.normpath(BUILD_DIR)
+    if normalized == build_normalized or normalized.startswith(build_normalized + os.sep):
+        return normalized
+    return os.path.normpath(os.path.join(BUILD_DIR, normalized))
+
 
 def convert_to_html(classified_file, output_html_file):
     """
@@ -86,6 +99,10 @@ def convert_to_html(classified_file, output_html_file):
             # Transition (CUT TO:, DISSOLVE TO:, FADE TO:): right-aligned, all-caps
             text = escape(elem["text"].strip())
             html_lines.append(f'  <p class="transition-right">{text}</p>')
+
+        elif elem_type == "page_break":
+            # Force a new page in EPUB flow between OCR split halves.
+            html_lines.append('  <div class="page-break" style="page-break-before: always;"></div>')
         
         else:
             # Unknown type - default to action
@@ -99,6 +116,9 @@ def convert_to_html(classified_file, output_html_file):
     html_lines.append('</body>')
     html_lines.append('</html>')
     
+    output_html_file = resolve_build_path(output_html_file)
+    os.makedirs(os.path.dirname(output_html_file), exist_ok=True)
+
     # Write HTML file
     with open(output_html_file, 'w', encoding='utf-8') as f:
         f.write('\n'.join(html_lines))
@@ -155,6 +175,6 @@ if __name__ == "__main__":
         output_file = sys.argv[2]
     else:
         input_file = "temp_classified_elements.json"
-        output_file = "temp_screenplay.html"
+        output_file = os.path.join(BUILD_DIR, "temp_screenplay.html")
     
     convert_to_html(input_file, output_file)

@@ -131,3 +131,18 @@ p.transition-right {
     margin-left: 0;
     margin-right: 0;
 }
+
+.page-break {
+    page-break-before: always;
+    page-break-after: always;
+    height: 0;
+    overflow: hidden;
+}
+
+img.page-image {
+    width: 100%;
+    height: auto;
+    display: block;
+    margin: 0;
+    padding: 0;
+}

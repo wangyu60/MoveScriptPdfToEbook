@@ -1,5 +1,18 @@
+import os
 from bs4 import BeautifulSoup
 import re
+
+BUILD_DIR = "build"
+
+def ensure_build_path(path):
+    if os.path.isabs(path):
+        return os.path.normpath(path)
+    normalized = os.path.normpath(path)
+    build_normalized = os.path.normpath(BUILD_DIR)
+    if normalized == build_normalized or normalized.startswith(build_normalized + os.sep):
+        return normalized
+    return os.path.normpath(os.path.join(BUILD_DIR, normalized))
+
 
 def parse_css_value(style_str, prop):
     match = re.search(rf'{prop}:\s*([0-9.]+)\s*pt', style_str)
@@ -169,11 +182,15 @@ def process_html(input_html_path, output_html_path):
     for item in final_content_for_body:
         body_tag.append(BeautifulSoup(item, 'html.parser'))
 
+    output_html_path = ensure_build_path(output_html_path)
+    os.makedirs(os.path.dirname(output_html_path), exist_ok=True)
+
     with open(output_html_path, 'w', encoding='utf-8') as f:
         f.write(final_html.prettify())
 
 if __name__ == "__main__":
     input_file = "true-grit-2010.html"
-    output_file = "true-grit-2010_processed.html"
+    output_file = ensure_build_path("true-grit-2010_processed.html")
+    os.makedirs(os.path.dirname(output_file), exist_ok=True)
     process_html(input_file, output_file)
     print(f"'{input_file}' successfully processed to '{output_file}'")
