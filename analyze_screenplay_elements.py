@@ -14,7 +14,7 @@ def analyze_screenplay_elements(coordinates_file, output_file):
         data = json.load(f)
     
     X0_PAGE_NUMBER_MIN = 450.0
-    TRANSITION_SUFFIXES = ("CUT TO:", "DISSOLVE TO:", "FADE TO:")
+    TRANSITION_SUFFIXES = ("CUT TO:", "DISSOLVE TO:", "FADE TO:", "CUT TO BLACK:", "FADE OUT:")
     SCENE_NUMBER_RE = re.compile(r'^[A-Z]?\d+[A-Z]?(\.[A-Z]?\d+[A-Z]?)*$')
 
     lines_by_block = {}
@@ -128,6 +128,10 @@ def analyze_screenplay_elements(coordinates_file, output_file):
 
         is_numeric = bool(re.match(r'^\d+\.?$', full_text.strip()))
         if is_numeric and primary_x0 >= X0_PAGE_NUMBER_MIN:
+            continue
+        
+        # Skip header elements at the very top of the page (e.g., revision codes)
+        if y0 < 60.0:
             continue
         
         element_type = None

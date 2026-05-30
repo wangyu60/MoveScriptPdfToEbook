@@ -6,6 +6,7 @@ import os
 import json
 import fitz
 from PIL import Image
+import concurrent.futures
 
 BUILD_DIR = "build"
 
@@ -23,6 +24,14 @@ def ensure_output_dir(output_path):
     dir_path = os.path.dirname(output_path)
     if dir_path:
         os.makedirs(dir_path, exist_ok=True)
+
+
+def _rect_to_tuple(rect):
+    return (rect.x0, rect.y0, rect.x1, rect.y1) if rect is not None else None
+
+
+def _tuple_to_rect(rect_tuple):
+    return fitz.Rect(rect_tuple) if rect_tuple is not None else None
 
 
 def is_scanned_pdf(pdf_file):
@@ -95,6 +104,35 @@ def process_page(pdf_file, page_num, output_base_name, use_ocr=False, crop_rect=
     
     print(f"=== Complete! Output saved to {output_html_file} and {os.path.splitext(output_html_file)[0]}.epub ===")
 
+def process_page_for_pool(args):
+    page_num, pdf_file, use_ocr, crop_rect_tuple = args
+    crop_rect = _tuple_to_rect(crop_rect_tuple)
+    os.makedirs("Intermediates", exist_ok=True)
+
+    coords_file = f"Intermediates/temp_page_{page_num}_coordinates.json"
+    classified_file = f"Intermediates/temp_page_{page_num}_classified.json"
+
+    if use_ocr:
+        import extract_text_ocr
+        import analyze_screenplay_elements
+        extract_text_ocr.extract_text_ocr(pdf_file, page_num, coords_file, clip_rect=crop_rect)
+    else:
+        import extract_text_coordinates
+        import analyze_screenplay_elements
+        extract_text_coordinates.extract_text_with_coordinates(pdf_file, page_num, coords_file)
+
+    if not os.path.exists(coords_file):
+        print(f"Extraction failed for page {page_num + 1}; skipping this page.")
+        return {"page_number": page_num, "elements": []}
+
+    analyze_screenplay_elements.analyze_screenplay_elements(coords_file, classified_file)
+
+    with open(classified_file, 'r', encoding='utf-8') as f:
+        page_data = json.load(f)
+
+    return {"page_number": page_num, "elements": page_data.get("elements", [])}
+
+
 def extract_author_from_cover(pdf_file):
     """Extract author name from the cover page (page 0)."""
     import fitz
@@ -130,7 +168,7 @@ def extract_author_from_cover(pdf_file):
     return "Unknown"
 
 
-def process_file(pdf_file, output_html_file, use_ocr=False, crop_rect=None):
+def process_file(pdf_file, output_html_file, use_ocr=False, crop_rect=None, max_workers=None):
     """Process entire PDF file through the full pipeline."""
     import fitz  
     
@@ -182,41 +220,43 @@ def process_file(pdf_file, output_html_file, use_ocr=False, crop_rect=None):
     
     all_elements = []
     
-    for page_num in range(1, total_pages):
-        print(f"\n--- Processing page {page_num + 1}/{total_pages} ---")
-        
-        if use_ocr:
-            coords_file = f"Intermediates/temp_page_{page_num}_coordinates.json"
-            import extract_text_ocr
-            import analyze_screenplay_elements
-            extract_text_ocr.extract_text_ocr(pdf_file, page_num, coords_file, clip_rect=crop_rect)
+    page_args = [
+        (page_num, pdf_file, use_ocr, _rect_to_tuple(crop_rect))
+        for page_num in range(1, total_pages)
+    ]
 
-            if not os.path.exists(coords_file):
-                print(f"Extraction failed for page {page_num + 1}; skipping this page.")
-                continue
+    if max_workers is None:
+        max_workers = os.cpu_count() or 1
+    if max_workers < 1:
+        max_workers = 1
 
-            classified_file = f"Intermediates/temp_page_{page_num}_classified.json"
-            analyze_screenplay_elements.analyze_screenplay_elements(coords_file, classified_file)
+    if max_workers == 1:
+        print("Using sequential page processing (no parallel workers).")
+        for page_num in range(1, total_pages):
+            result = process_page_for_pool((page_num, pdf_file, use_ocr, _rect_to_tuple(crop_rect)))
+            all_elements.extend(result.get("elements", []))
+    else:
+        print(f"Using up to {max_workers} worker processes for page extraction and classification.")
 
-            with open(classified_file, 'r', encoding='utf-8') as f:
-                page_data = json.load(f)
-                all_elements.extend(page_data["elements"])
-        else:
-            coords_file = f"Intermediates/temp_page_{page_num}_coordinates.json"
-            import extract_text_coordinates
-            import analyze_screenplay_elements
-            extract_text_coordinates.extract_text_with_coordinates(pdf_file, page_num, coords_file)
+        results_by_page = {}
+        with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
+            future_to_page = {
+                executor.submit(process_page_for_pool, args): args[0]
+                for args in page_args
+            }
 
-            if not os.path.exists(coords_file):
-                print(f"Extraction failed for page {page_num + 1}; skipping this page.")
-                continue
+            for future in concurrent.futures.as_completed(future_to_page):
+                page_num = future_to_page[future]
+                try:
+                    result = future.result()
+                except Exception as exc:
+                    print(f"Page {page_num + 1} failed in worker process: {exc}")
+                    continue
+                else:
+                    results_by_page[page_num] = result.get("elements", [])
 
-            classified_file = f"Intermediates/temp_page_{page_num}_classified.json"
-            analyze_screenplay_elements.analyze_screenplay_elements(coords_file, classified_file)
-
-            with open(classified_file, 'r', encoding='utf-8') as f:
-                page_data = json.load(f)
-                all_elements.extend(page_data["elements"])
+        for page_num in sorted(results_by_page.keys()):
+            all_elements.extend(results_by_page[page_num])
     
     print(f"\n=== Converting {len(all_elements)} elements to HTML ===")
     
@@ -251,6 +291,8 @@ if __name__ == "__main__":
     parser.add_argument("--ocr", choices=['auto', 'force', 'skip'], default='auto', help="OCR extraction mode (default: auto)")
     parser.add_argument("--select-crop", action="store_true", help="Interactively select crop region for OCR (excludes page numbers, dates, etc.)")
     parser.add_argument("--crop-json", help="Path to crop selection JSON file (skip interactive selection)")
+    parser.add_argument("--workers", type=int, help="Number of worker processes to use when processing the full PDF")
+    parser.add_argument("--no-parallel", action="store_true", help="Disable parallel page processing and run sequentially")
 
 
     args = parser.parse_args()
@@ -316,4 +358,10 @@ if __name__ == "__main__":
     else:
         base_name = os.path.splitext(os.path.basename(args.pdf_file))[0]
         output_html = f"{base_name}.html"
-        process_file(args.pdf_file, output_html, use_ocr=use_ocr, crop_rect=crop_rect)
+        process_file(
+            args.pdf_file,
+            output_html,
+            use_ocr=use_ocr,
+            crop_rect=crop_rect,
+            max_workers=1 if args.no_parallel else args.workers,
+        )
