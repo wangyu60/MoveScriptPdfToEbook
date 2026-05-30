@@ -11,6 +11,8 @@ A Python-based tool that converts PDF screenplay files (including Final Draft ex
 - Added a new `regenerate_from_coordinates.py` script to allow regeneration of HTML and EPUB from existing coordinate JSON files.
 - Implemented interactive crop region selection for OCR processing in `select_crop_region.py`, allowing users to define specific areas of a PDF page for text extraction.
 - Enhanced `process_file.py` to support OCR mode selection and crop region handling, improving the flexibility of PDF processing.
+- Added parallel page processing to `process_file.py` with `--workers N`, and added `--no-parallel` to force sequential execution when needed.
+- Extended screenplay transition detection in `analyze_screenplay_elements.py` to recognize `CUT TO BLACK:` and `FADE OUT:`, and added logic to skip top-of-page header elements.
 - Updated `process_html.py` to ensure output paths are correctly managed and directories are created as needed.
 - Added CSS styles for page breaks and image handling in `styles.css` to improve formatting in generated documents.
 - Refactored code for better organization and maintainability across multiple modules.
@@ -43,7 +45,8 @@ The project follows a multi-stage pipeline architecture:
   - `x0 ≥ 200`: Character names and parentheticals
   - Far-right (`x0 ≥ 450`): Page numbers — skipped
 - Uses font information to distinguish character names (normal) from parentheticals (italic)
-- Detects screenplay transitions (`CUT TO:`, `DISSOLVE TO:`, `FADE TO:`) and classifies them as `transition_right`
+- Detects screenplay transitions (`CUT TO:`, `DISSOLVE TO:`, `FADE TO:`, `CUT TO BLACK:`, `FADE OUT:`) and classifies them as `transition_right`
+- Skips top-of-page header elements such as revision codes and page headers before classifying page content
 - Groups consecutive lines with minimal vertical spacing into single elements
 
 #### 3. HTML Conversion (`convert_to_html.py`)
@@ -99,7 +102,7 @@ pip install PyMuPDF ebooklib beautifulsoup4 pillow pytesseract opencv-python
 ### Command Line Options
 
 ```
-python process_file.py <pdf_file> [page_num] [--ocr MODE] [--select-crop] [--crop-json FILE]
+python process_file.py <pdf_file> [page_num] [--ocr MODE] [--select-crop] [--crop-json FILE] [--workers N] [--no-parallel]
 
 Arguments:
   pdf_file      Path to the PDF file
@@ -112,6 +115,8 @@ Options:
                 - skip: Skip OCR, use native text extraction only
   --select-crop Interactively select crop region for OCR (excludes page numbers, dates, etc.)
   --crop-json FILE Load crop selection from JSON file (skip interactive selection)
+  --workers N  Number of worker processes to use for full-document processing
+  --no-parallel Disable parallel page processing and run sequentially
 ```
 
 ### Basic Usage
@@ -122,9 +127,29 @@ Options:
 python process_file.py screenplay.pdf
 ```
 
+#### Process Entire PDF with Parallel Workers
+
+```bash
+python process_file.py screenplay.pdf --workers 6
+```
+
+This uses up to 6 worker processes to extract and classify pages concurrently.
+
+#### Process Entire PDF Sequentially (disable parallelism)
+
+```bash
+python process_file.py screenplay.pdf --no-parallel
+```
+
 Outputs:
 - `build/screenplay.html` — Formatted HTML version
 - `build/screenplay.epub` — EPUB e-book (with cover image, title, and author)
+
+### Performance Tips
+
+- Use `--workers N` when processing large PDFs on a multi-core machine to parallelize page extraction and classification.
+- For small PDFs, low-memory environments, or when debugging, use `--no-parallel` to avoid process overhead and keep execution sequential.
+- If you notice high CPU but low I/O, increasing `N` may speed up processing; if you see memory pressure, lower `N` or use `--no-parallel`.
 
 #### Process Single Page (for debugging)
 
@@ -216,7 +241,7 @@ The tool automatically identifies and formats:
 | Character Name | `character-name-group` | Speaker identification (centered, uppercase) |
 | Parenthetical | `parenthetical` | Stage directions within dialogue (italic) |
 | Dialogue | `dialogue` | Character speech (indented) |
-| Transition | `transition-right` | CUT TO:, DISSOLVE TO:, FADE TO: (right-aligned) |
+| Transition | `transition-right` | CUT TO:, DISSOLVE TO:, FADE TO:, CUT TO BLACK:, FADE OUT: (right-aligned) |
 
 ## Output Formats
 
